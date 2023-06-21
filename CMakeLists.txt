@@ -26,35 +26,9 @@ set(link_libraries
   Threads::Threads
 )
 
-add_custom_target(make_gen_inc_folder ALL
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${PROJECT_NAME}
-)
-
-add_custom_target(make_gen_src_folder ALL
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/generated/src
-)
-
-add_custom_target(
-  generate_jinja_sources ALL
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${PROJECT_NAME}/parameters.hpp ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/parameters.cpp
-)
-
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${PROJECT_NAME}/parameters.hpp ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/parameters.cpp
-  COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/template/render_jinja.py --header_output ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${PROJECT_NAME}/parameters.hpp --header_template ${CMAKE_CURRENT_SOURCE_DIR}/template/parameters.hpp.j2
-  --src_output ${CMAKE_CURRENT_SOURCE_DIR}/generated/src/parameters.cpp --src_template ${CMAKE_CURRENT_SOURCE_DIR}/template/parameters.cpp.j2
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../../config/${PROJECT_NAME}.yaml ${CMAKE_CURRENT_SOURCE_DIR}/template/render_jinja.py ${CMAKE_CURRENT_SOURCE_DIR}/template/parameters.hpp.j2 ${CMAKE_CURRENT_SOURCE_DIR}/template/parameters.cpp.j2
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMENT "Generating header ${CMAKE_CURRENT_SOURCE_DIR}/generated/include/${PROJECT_NAME}/${PROJECT_NAME}.hpp"
-)
-
 
 file(GLOB_RECURSE executable_sources CONFIGURE_DEPENDS
      "${PROJECT_SOURCE_DIR}/src/*.cpp"
-)
-
-file(GLOB_RECURSE generated_sources CONFIGURE_DEPENDS
-     "${PROJECT_SOURCE_DIR}/generated/src/*.cpp"
 )
 
 foreach(tdependency ${third_party_find_package_list})
@@ -68,13 +42,10 @@ endforeach()
 
 find_package(Boost REQUIRED COMPONENTS ${boost_libraries_list}) 
 
-add_executable(${PROJECT_NAME} ${executable_sources} ${generated_sources})
-add_dependencies(generate_jinja_sources make_gen_inc_folder make_gen_src_folder)
-add_dependencies(${PROJECT_NAME} generate_jinja_sources)
+add_library(${PROJECT_NAME} ${executable_sources})
+
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/generated/include>
   $<INSTALL_INTERFACE:include>
   $<BUILD_INTERFACE:${Boost_INCLUDE_DIRS}>
 )
@@ -88,8 +59,25 @@ target_link_libraries(${PROJECT_NAME} ${link_libraries} ${Boost_LIBRARIES})
 
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
-install(TARGETS ${PROJECT_NAME}
-  DESTINATION lib/${PROJECT_NAME})
+
+# this line to exports the library
+ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
+
+# install the include/my_cpp_library directory to the install/include/my_cpp_library
+install(
+  DIRECTORY include/${PROJECT_NAME}
+  DESTINATION include
+)
+ 
+install(
+  TARGETS ${PROJECT_NAME}
+  EXPORT ${PROJECT_NAME}
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
