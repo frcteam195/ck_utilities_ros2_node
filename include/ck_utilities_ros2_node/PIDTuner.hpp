@@ -1,36 +1,36 @@
-// #pragma once
+#pragma once
 
-// #include "ck_utilities_ros2_node/PIDController.hpp"
+#include "ck_utilities_ros2_node/PIDController.hpp"
 
-// #include "ck_ros_base_msgs_node/PID_Tuning.h"
-// #include "ros/ros.h"
+#include "ck_ros2_base_msgs_node/msg/pid_tuning.hpp"
 
-// #include <string>
-// #include <thread>
+#include "rclcpp/rclcpp.hpp"
 
-// namespace ck
-// {
-//     class PIDController;
+#include <string>
+#include <thread>
 
-//     class PIDTuner
-//     {
-//     public:
-//         PIDTuner(ros::NodeHandle *n, std::string topic_basename, PIDController *pid);
-//         ~PIDTuner();
+namespace ck
+{
+    class PIDController;
 
-//         void update();
+    class PIDTuner
+    {
+    public:
+        PIDTuner(std::string topic_basename, PIDController *pid);
+        ~PIDTuner();
 
-//     private:
-//         void set_gains_callback(const ck_ros_base_msgs_node::PID_Tuning &tuning);
+        void update();
 
-//         ros::NodeHandle *n;
-//         std::string topic_basename;
-//         PIDController *pid;
+    private:
+        void set_gains_callback(const ck_ros2_base_msgs_node::msg::PIDTuning &tuning);
 
-//         ros::Publisher actual_gains_pub;
-//         ros::Publisher set_gains_pub;
-//         ros::Subscriber set_gains_sub;
+        std::string topic_basename;
+        PIDController *pid;
 
-//         std::thread pub_thread;
-//     };
-// } // namespace ck
+        rclcpp::Publisher<ck_ros2_base_msgs_node::msg::PIDTuning>::SharedPtr actual_gains_pub;
+        rclcpp::Publisher<ck_ros2_base_msgs_node::msg::PIDTuning>::SharedPtr set_gains_pub;
+        rclcpp::Subscription<ck_ros2_base_msgs_node::msg::PIDTuning>::SharedPtr set_gains_sub;
+
+        std::thread pub_thread;
+    };
+} // namespace ck
