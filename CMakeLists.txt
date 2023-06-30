@@ -19,7 +19,14 @@ set(third_party_find_package_list
 set(ros_find_package_list
   rclcpp
   std_msgs
+  nav_msgs
+  geometry_msgs
   ck_ros2_base_msgs_node
+  tf2
+  tf2_eigen
+  tf2_ros
+  tf2_geometry_msgs
+
 )
 
 set(link_libraries
@@ -41,6 +48,7 @@ foreach(rdependency ${ros_find_package_list})
 endforeach()
 
 find_package(Boost REQUIRED COMPONENTS ${boost_libraries_list}) 
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 add_library(${PROJECT_NAME} ${executable_sources})
 
@@ -54,7 +62,7 @@ foreach(rtdependency ${ros_find_package_list})
   ament_target_dependencies(${PROJECT_NAME} ${rtdependency})
 endforeach()
 
-target_link_libraries(${PROJECT_NAME} ${link_libraries} ${Boost_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${link_libraries} ${Boost_LIBRARIES} Eigen3::Eigen)
 
 
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
