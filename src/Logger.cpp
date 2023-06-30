@@ -1,74 +1,76 @@
-// #include "ck_utilities_ros2_node/Logger.hpp"
-// #if __has_include("ros/ros.h")
+#include "ck_utilities_ros2_node/Logger.hpp"
+// #if __has_include("rclcpp/rclcpp.hpp")
 
-// #include "ros/ros.h"
+#include "rclcpp/rclcpp.hpp"
+#include "ck_utilities_ros2_node/node_handle.hpp"
 
-// #include <sstream>
 
-// enum class ros_log_level
-// {
-//     DEBUG,
-//     INFO,
-//     WARN,
-//     ERROR,
-//     FATAL,
-// };
+#include <sstream>
 
-// class logger : public std::stringbuf
-// {
-// public:
-//     logger(ros_log_level level)
-//     {
-//         this->log_level = level;
-//     }
+enum class ros_log_level
+{
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR,
+    FATAL,
+};
 
-//     virtual int sync()
-//     {
-//         switch(this->log_level)
-//         {
-//             case ros_log_level::DEBUG:
-//             {
-//                 ROS_DEBUG("%s", this->str().c_str());
-//                 break;
-//             }
-//             case ros_log_level::INFO:
-//             {
-//                 ROS_INFO("%s", this->str().c_str());
-//                 break;
-//             }
-//             case ros_log_level::WARN:
-//             {
-//                 ROS_WARN("%s", this->str().c_str());
-//                 break;
-//             }
-//             case ros_log_level::ERROR:
-//             {
-//                 ROS_ERROR("%s", this->str().c_str());
-//                 break;
-//             }
-//             case ros_log_level::FATAL:
-//             {
-//                 ROS_FATAL("%s", this->str().c_str());
-//                 break;
-//             }
-//         }
-//         this->str("");
-//         return 0;
-//     }
+class logger : public std::stringbuf
+{
+public:
+    logger(ros_log_level level)
+    {
+        this->log_level = level;
+    }
 
-// private:
-//     ros_log_level log_level;
-// };
+    virtual int sync()
+    {
+        switch(this->log_level)
+        {
+            case ros_log_level::DEBUG:
+            {
+                RCLCPP_DEBUG(node_handle->get_logger(), "%s", this->str().c_str());
+                break;
+            }
+            case ros_log_level::INFO:
+            {
+                RCLCPP_INFO(node_handle->get_logger(), "%s", this->str().c_str());
+                break;
+            }
+            case ros_log_level::WARN:
+            {
+                RCLCPP_WARN(node_handle->get_logger(), "%s", this->str().c_str());
+                break;
+            }
+            case ros_log_level::ERROR:
+            {
+                RCLCPP_ERROR(node_handle->get_logger(), "%s", this->str().c_str());
+                break;
+            }
+            case ros_log_level::FATAL:
+            {
+                RCLCPP_FATAL(node_handle->get_logger(), "%s", this->str().c_str());
+                break;
+            }
+        }
+        this->str("");
+        return 0;
+    }
 
-// logger debug_buf(ros_log_level::DEBUG);
-// logger info_buf(ros_log_level::INFO);
-// logger warn_buf(ros_log_level::WARN);
-// logger error_buf(ros_log_level::ERROR);
-// logger fatal_buf(ros_log_level::FATAL);
+private:
+    ros_log_level log_level;
+};
 
-// std::ostream ck::log_debug(&debug_buf);
-// std::ostream ck::log_info(&info_buf);
-// std::ostream ck::log_warn(&warn_buf);
-// std::ostream ck::log_error(&error_buf);
-// std::ostream ck::log_fatal(&fatal_buf);
+logger debug_buf(ros_log_level::DEBUG);
+logger info_buf(ros_log_level::INFO);
+logger warn_buf(ros_log_level::WARN);
+logger error_buf(ros_log_level::ERROR);
+logger fatal_buf(ros_log_level::FATAL);
+
+std::ostream ck::log_debug(&debug_buf);
+std::ostream ck::log_info(&info_buf);
+std::ostream ck::log_warn(&warn_buf);
+std::ostream ck::log_error(&error_buf);
+std::ostream ck::log_fatal(&fatal_buf);
 // #endif
