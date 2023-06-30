@@ -9,8 +9,8 @@
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
-  <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>ck_ros2_base_msgs_node</depend>
   <depend>tf2</depend>
   <depend>tf2_eigen</depend>
