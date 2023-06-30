@@ -1,5 +1,4 @@
 #pragma once
-#if __has_include("ros/ros.h")
 #include <stdint.h>
 
 class SolenoidMaster;
@@ -30,4 +29,3 @@ private:
     Solenoid() = delete;
 friend class SolenoidMaster;
 };
-#endif

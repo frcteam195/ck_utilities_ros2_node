@@ -1,16 +1,15 @@
 #include "ck_utilities_ros2_node/Solenoid.hpp"
-#if __has_include("ros/ros.h")
 #include <thread>
 #include <map>
 #include <mutex>
-#include "ros/ros.h"
-#include "ck_ros_base_msgs_node/Solenoid_Control.h"
+#include "rclcpp/rclcpp.hpp"
+#include "ck_ros2_base_msgs_node/msg/solenoid_control.hpp"
+#include "ck_ros2_base_msgs_node/msg/solenoid_control_array.hpp"
+#include "ck_utilities_ros2_node/node_handle.hpp"
 
 static std::map<uint8_t, Solenoid *> solenoid_map;
 static std::recursive_mutex solenoid_mutex;
-static ros::Publisher control_publisher;
-
-extern ros::NodeHandle * node;
+static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::SolenoidControlArray>::SharedPtr control_publisher;
 
 class SolenoidMaster
 {
@@ -34,7 +33,7 @@ public:
     SolenoidMaster()
     {
         std::lock_guard<std::recursive_mutex> lock(solenoid_mutex);
-        control_publisher = node->advertise<ck_ros_base_msgs_node::Solenoid_Control>("/SolenoidControl", 50);
+        control_publisher = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::SolenoidControlArray>("/SolenoidControl", 50);
         solenoid_master_thread = new std::thread(solenoid_master_loop);
     }
 
@@ -69,7 +68,7 @@ private:
     static void send_master_controls_periodic()
     {
         std::lock_guard<std::recursive_mutex> lock(solenoid_mutex);
-        static ck_ros_base_msgs_node::Solenoid_Control solenoid_control_list;
+        static ck_ros2_base_msgs_node::msg::SolenoidControlArray solenoid_control_list;
         solenoid_control_list.solenoids.clear();
 
         for(std::map<uint8_t, Solenoid *>::iterator i = solenoid_map.begin();
@@ -77,7 +76,7 @@ private:
             i++)
         {
             Solenoid* s = (*i).second;
-            ck_ros_base_msgs_node::Solenoid solenoid;
+            ck_ros2_base_msgs_node::msg::SolenoidControl solenoid;
             solenoid.solenoid_type = (int8_t)s->type;
             solenoid.id = s->id;
             Solenoid::SolenoidState tmpState = s->mOutput;
@@ -86,13 +85,13 @@ private:
             solenoid_control_list.solenoids.push_back(solenoid);
         }
 
-        control_publisher.publish(solenoid_control_list);
+        control_publisher->publish(solenoid_control_list);
     }
 
     static void solenoid_master_loop()
     {
-        ros::Rate timer(10);
-        while(ros::ok())
+        rclcpp::Rate timer(10);
+        while(rclcpp::ok())
         {
             send_master_controls_periodic();
             timer.sleep();
@@ -124,14 +123,14 @@ void Solenoid::set(Solenoid::SolenoidState state)
     std::lock_guard<std::recursive_mutex> lock(solenoid_mutex);
     mOutput = state;
 
-    ck_ros_base_msgs_node::Solenoid_Control solenoid_control;
-    ck_ros_base_msgs_node::Solenoid solenoid;
+    ck_ros2_base_msgs_node::msg::SolenoidControlArray solenoid_control;
+    ck_ros2_base_msgs_node::msg::SolenoidControl solenoid;
     solenoid.id = (int32_t) this->id;
     solenoid.solenoid_type = (int8_t) this->type;
-    solenoid.module_type = ck_ros_base_msgs_node::Solenoid::CTREPCM;
+    solenoid.module_type = ck_ros2_base_msgs_node::msg::SolenoidControl::CTREPCM;
     solenoid.output_value = (int8_t) state;
     solenoid_control.solenoids.push_back(solenoid);
 
-    control_publisher.publish(solenoid_control);
+    control_publisher->publish(solenoid_control);
 }
-#endif
+// #endif
