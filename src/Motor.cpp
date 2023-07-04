@@ -1,17 +1,17 @@
 #include <cstdint>
-#if __has_include("ros/ros.h")
-#include "ck_ros_base_msgs_node/Motor_Control.h"
-#include "ck_ros_base_msgs_node/Motor_Configuration.h"
-#include "ck_ros_base_msgs_node/Robot_Status.h"
+#include "ck_ros2_base_msgs_node/msg/motor_control.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_control_array.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_configuration.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_configuration_array.hpp"
+#include "ck_ros2_base_msgs_node/msg/robot_status.hpp"
 #include "ck_utilities_ros2_node/Motor.hpp"
 
-#include "ros/ros.h"
+#include "rclcpp/rclcpp.hpp"
 #include <mutex>
 #include <map>
 #include <thread>
 #include <atomic>
-
-extern ros::NodeHandle* node;
+#include "ck_utilities_ros2_node/node_handle.hpp"
 
 static std::recursive_mutex motor_mutex;
 
@@ -19,7 +19,7 @@ class MotorMaster
 {
 public:
 
-    static void robot_status_callback(const ck_ros_base_msgs_node::Robot_Status& msg)
+    static void robot_status_callback(const ck_ros2_base_msgs_node::msg::RobotStatus& msg)
     {
         robot_mode = msg.robot_state;
     }
@@ -30,7 +30,7 @@ public:
         motor_map[id] = motor;
     }
 
-    static void create_motor_config(uint8_t id, Motor::Motor_Type type)
+    static void create_motor_config(uint8_t id)
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
         if (configuration_map.find(id) != configuration_map.end())
@@ -43,8 +43,16 @@ public:
         configuration_map[id]->pending_config.motor_id = id;
         configuration_map[id]->active_config.motor_config.id = id;
         configuration_map[id]->pending_config.motor_config.id = id;
-        configuration_map[id]->active_config.motor_config.controller_type = (uint8_t) type;
-        configuration_map[id]->pending_config.motor_config.controller_type = (uint8_t) type;
+        configuration_map[id]->pending_config.motor_config.k_p = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_i = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_d = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_v = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_s = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_p = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_i = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_d = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_v = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_s = std::vector<double>{0,0,0};
         configuration_map[id]->set_defaults();
         configuration_map[id]->apply();
     }
@@ -72,10 +80,10 @@ public:
     MotorMaster()
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-        control_publisher = node->advertise<ck_ros_base_msgs_node::Motor_Control>("/MotorControl", 50);
-        config_publisher = node->advertise<ck_ros_base_msgs_node::Motor_Configuration>("/MotorConfiguration", 50);
+        control_publisher = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>("/MotorControl", 50);
+        config_publisher = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>("/MotorConfiguration", 50);
         robot_mode = 0;
-        robot_data_subscriber = node->subscribe("RobotStatus", 10, robot_status_callback);
+        robot_data_subscriber = node_handle->create_subscription<ck_ros2_base_msgs_node::msg::RobotStatus>("RobotStatus", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(), std::bind(&MotorMaster::robot_status_callback, this, std::placeholders::_1));
 
 
         motor_master_thread = new std::thread(motor_master_loop);
@@ -116,9 +124,9 @@ public:
 
 private:
     static std::thread * motor_master_thread;
-    static ros::Publisher config_publisher;
-    static ros::Publisher control_publisher;
-    static ros::Subscriber robot_data_subscriber;
+    static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>::SharedPtr config_publisher;
+    static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr control_publisher;
+    static rclcpp::Subscription<ck_ros2_base_msgs_node::msg::RobotStatus>::SharedPtr robot_data_subscriber;
     static std::atomic<int8_t> robot_mode;
     static std::map<uint8_t, MotorConfig *> configuration_map;
     static std::map<uint8_t, Motor *> motor_map;
@@ -127,7 +135,7 @@ private:
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
 
-        ck_ros_base_msgs_node::Motor_Configuration config_list;
+        ck_ros2_base_msgs_node::msg::MotorConfigurationArray config_list;
 
         for(std::map<uint8_t, MotorConfig *>::iterator i = configuration_map.begin();
             i != configuration_map.end();
@@ -136,13 +144,13 @@ private:
             config_list.motors.push_back((*i).second->active_config.motor_config);
         }
 
-        config_publisher.publish(config_list);
+        config_publisher->publish(config_list);
     }
 
     static void send_master_controls_periodic()
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-        static ck_ros_base_msgs_node::Motor_Control motor_control_list;
+        static ck_ros2_base_msgs_node::msg::MotorControlArray motor_control_list;
         motor_control_list.motors.clear();
 
         for(std::map<uint8_t, Motor *>::iterator i = motor_map.begin();
@@ -152,16 +160,15 @@ private:
             Motor* m = (*i).second;
             if (m->mValueLock.try_lock())
             {
-                if(m->config().active_config.motor_config.controller_mode == ck_ros_base_msgs_node::Motor_Config::MASTER ||
-                m->config().active_config.motor_config.controller_mode == ck_ros_base_msgs_node::Motor_Config::FAST_MASTER)
+                if(m->mControlMode != Motor::ControlMode::FOLLOWER)
                 {
-                    ck_ros_base_msgs_node::Motor motor;
-                    motor.controller_type = m->config().active_config.motor_config.controller_type;
+                    ck_ros2_base_msgs_node::msg::MotorControl motor;
                     motor.id = m->id;
-                    Motor::Control_Mode tmpCtrl = m->mControlMode;
-                    motor.control_mode = (int8_t)tmpCtrl;
-                    motor.output_value = m->mOutput;
-                    motor.arbitrary_feedforward = m->mArbFF;
+                    motor.control_mode = (uint8_t)(m->mControlMode);
+                    motor.setpoint = m->mOutput;
+                    motor.feed_forward_type = (uint8_t)(m->mFFType);
+                    motor.feed_forward = m->mArbFF;
+                    motor.gain_slot = m->mGainSlot;
 
                     motor_control_list.motors.push_back(motor);
                 }
@@ -169,42 +176,42 @@ private:
             }
         }
 
-        control_publisher.publish(motor_control_list);
+        control_publisher->publish(motor_control_list);
     }
 
     static void send_follower_controls()
     {
-        std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+        // std::lock_guard<std::recursive_mutex> lock(motor_mutex);
 
-        ck_ros_base_msgs_node::Motor_Control motor_control_list;
+        // ck_ros2_base_msgs_node::msg::MotorControlArray motor_control_list;
 
-        for(std::map<uint8_t, MotorConfig *>::iterator i = configuration_map.begin();
-            i != configuration_map.end();
-            i++)
-        {
-            if((*i).second->active_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::FOLLOW_MASTER ||
-               (*i).second->active_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER)
-            {
-                ck_ros_base_msgs_node::Motor motor;
-                motor.controller_type = (*i).second->active_config.motor_config.controller_type;
-                motor.id = (*i).second->active_config.motor_config.id;
-                motor.control_mode = ck_ros_base_msgs_node::Motor::FOLLOWER;
-                motor.output_value = (*i).second->active_config.master_id;
-                motor_control_list.motors.push_back(motor);
-            }
-        }
+        // for(std::map<uint8_t, MotorConfig *>::iterator i = configuration_map.begin();
+        //     i != configuration_map.end();
+        //     i++)
+        // {
+        //     if((*i).second->active_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::FOLLOW_MASTER ||
+        //        (*i).second->active_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER)
+        //     {
+        //         ck_ros_base_msgs_node::Motor motor;
+        //         motor.controller_type = (*i).second->active_config.motor_config.controller_type;
+        //         motor.id = (*i).second->active_config.motor_config.id;
+        //         motor.control_mode = ck_ros_base_msgs_node::Motor::FOLLOWER;
+        //         motor.output_value = (*i).second->active_config.master_id;
+        //         motor_control_list.motors.push_back(motor);
+        //     }
+        // }
 
-        control_publisher.publish(motor_control_list);
+        // control_publisher.publish(motor_control_list);
     }
 
     static void motor_master_loop()
     {
-        ros::Rate timer(10);
-        while(ros::ok())
+        rclcpp::Rate timer(10);
+        while(rclcpp::ok())
         {
             send_motor_configs();
             send_master_controls_periodic();
-            send_follower_controls();
+            // send_follower_controls();
             timer.sleep();
         }
     }
@@ -216,9 +223,9 @@ friend class MotorConfig;
 std::map<uint8_t, MotorConfig *> MotorMaster::configuration_map;
 std::map<uint8_t, Motor *> MotorMaster::motor_map;
 std::thread * MotorMaster::motor_master_thread;
-ros::Publisher MotorMaster::config_publisher;
-ros::Publisher MotorMaster::control_publisher;
-ros::Subscriber MotorMaster::robot_data_subscriber;
+rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>::SharedPtr MotorMaster::config_publisher;
+rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr MotorMaster::control_publisher;
+rclcpp::Subscription<ck_ros2_base_msgs_node::msg::RobotStatus>::SharedPtr MotorMaster::robot_data_subscriber;
 std::atomic<int8_t> MotorMaster::robot_mode;
 
 static MotorMaster * motor_master = nullptr;
@@ -229,306 +236,197 @@ void MotorConfig::apply()
     this->active_config = this->pending_config;
 }
 
-void MotorConfig::set_fast_master(bool enable)
+void MotorConfig::set_kP(double value, uint8_t slot)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    if(enable)
-    {
-        this->pending_config.motor_config.controller_mode = ck_ros_base_msgs_node::Motor_Config::FAST_MASTER;
-    }
-    else
-    {
-        this->pending_config.motor_config.controller_mode = ck_ros_base_msgs_node::Motor_Config::MASTER;
+    if (this->pending_config.motor_config.k_p.size() > slot){
+        this->pending_config.motor_config.k_p[slot] = value;
     }
 }
 
-void MotorConfig::set_kP(double value)
+void MotorConfig::set_kI(double value, uint8_t slot)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kP = value;
+    if (this->pending_config.motor_config.k_i.size() > slot){
+        this->pending_config.motor_config.k_i[slot] = value;
+    }
 }
 
-void MotorConfig::set_kI(double value)
+void MotorConfig::set_kD(double value, uint8_t slot)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kI = value;
+    if (this->pending_config.motor_config.k_d.size() > slot){
+        this->pending_config.motor_config.k_d[slot] = value;
+    }
 }
 
-void MotorConfig::set_kD(double value)
+void MotorConfig::set_kV(double value, uint8_t slot)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kD = value;
+    if (this->pending_config.motor_config.k_v.size() > slot){
+        this->pending_config.motor_config.k_v[slot] = value;
+    }
 }
 
-void MotorConfig::set_kF(double value)
+void MotorConfig::set_kS(double value, uint8_t slot)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kF = value;
+    if (this->pending_config.motor_config.k_s.size() > slot){
+        this->pending_config.motor_config.k_s[slot] = value;
+    }
 }
 
-void MotorConfig::set_kP_Slot1(double value)
+void MotorConfig::set_motion_magic_cruise_velocity(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kP_1 = value;
+    this->pending_config.motor_config.motion_magic_cruise_velocity = value;
 }
 
-void MotorConfig::set_kI_Slot1(double value)
+void MotorConfig::set_motion_magic_acceleration(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kI_1 = value;
+    this->pending_config.motor_config.motion_magic_acceleration = value;
 }
 
-void MotorConfig::set_kD_Slot1(double value)
+void MotorConfig::set_motion_magic_jerk(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kD_1 = value;
-}
-
-void MotorConfig::set_kF_Slot1(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.kF_1 = value;
-}
-
-void MotorConfig::set_active_gain_slot(int8_t slotIdx)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.active_gain_slot = slotIdx;
-}
-
-void MotorConfig::set_i_zone(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.iZone = value;
-}
-
-void MotorConfig::set_max_i_accum(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.max_i_accum = value;
-}
-
-void MotorConfig::set_allowed_closed_loop_error(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.allowed_closed_loop_error = value;
-}
-
-void MotorConfig::set_max_closed_loop_peak_output(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.max_closed_loop_peak_output = value;
-}
-
-void MotorConfig::set_motion_cruise_velocity(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.motion_cruise_velocity = value;
-}
-
-void MotorConfig::set_motion_acceleration(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.motion_acceleration = value;
-}
-
-void MotorConfig::set_motion_s_curve_strength(int32_t value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.motion_s_curve_strength = value;
+    this->pending_config.motor_config.motion_magic_jerk = value;
 }
 
 void MotorConfig::set_forward_soft_limit(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.forward_soft_limit = value;
+    this->pending_config.motor_config.forward_soft_limit_threshold = value;
 }
 
 void MotorConfig::set_forward_soft_limit_enable(bool enabled)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.forward_soft_limit_enable = enabled;
+    this->pending_config.motor_config.enable_forward_soft_limit = enabled;
 }
 
 void MotorConfig::set_reverse_soft_limit(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.reverse_soft_limit = value;
+    this->pending_config.motor_config.reverse_soft_limit_threshold = value;
 }
 
 void MotorConfig::set_reverse_soft_limit_enable(bool enabled)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.reverse_soft_limit_enable = enabled;
-}
-
-void MotorConfig::set_feedback_sensor_coefficient(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.feedback_sensor_coefficient = value;
-}
-
-void MotorConfig::set_voltage_compensation_saturation(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.voltage_compensation_saturation = value;
-}
-
-void MotorConfig::set_voltage_compensation_enabled(bool enabled)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.voltage_compensation_enabled = enabled;
+    this->pending_config.motor_config.enable_reverse_soft_limit = enabled;
 }
 
 void MotorConfig::set_inverted(bool enabled)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    if(this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::FOLLOW_MASTER ||
-       this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER)
-    {
-        this->pending_config.motor_config.invert_type = enabled ? ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER : ck_ros_base_msgs_node::Motor_Config::FOLLOW_MASTER;
-        return;
-    }
-    this->pending_config.motor_config.invert_type = enabled ? ck_ros_base_msgs_node::Motor_Config::INVERT_MOTOR_OUTPUT : ck_ros_base_msgs_node::Motor_Config::NONE;
+    this->pending_config.motor_config.invert = enabled;
 
-}
-
-void MotorConfig::set_sensor_phase_inverted(bool enabled)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.sensor_phase_inverted = enabled;
 }
 
 void MotorConfig::set_neutral_mode(MotorConfig::NeutralMode mode)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.neutral_mode = (uint8_t) mode;
+    this->pending_config.motor_config.brake_neutral = mode == MotorConfig::NeutralMode::BRAKE;
 }
 
-void MotorConfig::set_open_loop_ramp(double value)
+void MotorConfig::set_duty_cycle_open_loop_ramp(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.open_loop_ramp = value;
+    this->pending_config.motor_config.duty_cycle_open_loop_ramp_period = value;
 }
 
-void MotorConfig::set_closed_loop_ramp(double value)
+void MotorConfig::set_torque_current_open_loop_ramp(double value)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.closed_loop_ramp = value;
+    this->pending_config.motor_config.torque_current_open_loop_ramp_period = value;
+}
+
+void MotorConfig::set_voltage_open_loop_ramp(double value)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    this->pending_config.motor_config.voltage_open_loop_ramp_period = value;
+}
+
+void MotorConfig::set_duty_cycle_closed_loop_ramp(double value)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    this->pending_config.motor_config.duty_cycle_closed_loop_ramp_period = value;
+}
+
+void MotorConfig::set_torque_current_closed_loop_ramp(double value)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    this->pending_config.motor_config.torque_current_closed_loop_ramp_period = value;
+}
+
+void MotorConfig::set_voltage_closed_loop_ramp(double value)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    this->pending_config.motor_config.voltage_closed_loop_ramp_period = value;
 }
 
 void MotorConfig::set_supply_current_limit(bool enabled, double current_limit, double trigger_current, double trigger_time)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.supply_current_limit_config.enable = enabled;
-    this->pending_config.motor_config.supply_current_limit_config.current_limit = current_limit;
-    this->pending_config.motor_config.supply_current_limit_config.trigger_threshold_current = trigger_current;
-    this->pending_config.motor_config.supply_current_limit_config.trigger_threshold_time = trigger_time;
+    this->pending_config.motor_config.enable_supply_current_limit = enabled;
+    this->pending_config.motor_config.supply_current_limit = current_limit;
+    this->pending_config.motor_config.supply_current_threshold = trigger_current;
+    this->pending_config.motor_config.supply_time_threshold = trigger_time;
 }
 
-void MotorConfig::set_stator_current_limit(bool enabled, double current_limit, double trigger_current, double trigger_time)
+void MotorConfig::set_stator_current_limit(bool enabled, double current_limit)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.stator_current_limit_config.enable = enabled;
-    this->pending_config.motor_config.stator_current_limit_config.current_limit = current_limit;
-    this->pending_config.motor_config.stator_current_limit_config.trigger_threshold_current = trigger_current;
-    this->pending_config.motor_config.stator_current_limit_config.trigger_threshold_time = trigger_time;
+    this->pending_config.motor_config.enable_stator_current_limit = enabled;
+    this->pending_config.motor_config.stator_current_limit = current_limit;
 }
 
-void MotorConfig::set_follower(bool enabled, uint8_t master_id)
+void MotorConfig::set_follower(uint8_t master_id)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    if(enabled)
-    {
-        this->pending_config.master_id = master_id;
-        if(this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER ||
-        this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::INVERT_MOTOR_OUTPUT)
-        {
-            this->pending_config.motor_config.invert_type = ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER;
-            return;
-        }
-        this->pending_config.motor_config.invert_type = ck_ros_base_msgs_node::Motor_Config::FOLLOW_MASTER;
-        this->pending_config.motor_config.controller_mode = ck_ros_base_msgs_node::Motor_Config::FOLLOWER;
-        return;
-    }
-    this->pending_config.master_id = 0;
-    this->pending_config.motor_config.controller_mode = ck_ros_base_msgs_node::Motor_Config::MASTER;
-    if(this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::OPPOSE_MASTER ||
-       this->pending_config.motor_config.invert_type == ck_ros_base_msgs_node::Motor_Config::INVERT_MOTOR_OUTPUT)
-    {
-        this->pending_config.motor_config.invert_type = ck_ros_base_msgs_node::Motor_Config::INVERT_MOTOR_OUTPUT;
-        return;
-    }
-    this->pending_config.motor_config.invert_type = ck_ros_base_msgs_node::Motor_Config::NONE;
-}
-
-void MotorConfig::set_forward_limit_switch(LimitSwitchSource forward_limit_switch_source, LimitSwitchNormal forward_limit_switch_normal)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.forward_limit_switch_source = (int8_t)forward_limit_switch_source;
-    this->pending_config.motor_config.forward_limit_switch_normal = (int8_t)forward_limit_switch_normal;
-}
-
-void MotorConfig::set_reverse_limit_switch(LimitSwitchSource reverse_limit_switch_source, LimitSwitchNormal reverse_limit_switch_normal)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.reverse_limit_switch_source = (int8_t)reverse_limit_switch_source;
-    this->pending_config.motor_config.reverse_limit_switch_normal = (int8_t)reverse_limit_switch_normal;
-}
-
-void MotorConfig::set_peak_output_forward(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.peak_output_forward = value;
-}
-
-void MotorConfig::set_peak_output_reverse(double value)
-{
-    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
-    this->pending_config.motor_config.peak_output_reverse = value;
+    this->pending_config.motor_config.master_id = master_id;
 }
 
 void MotorConfig::set_defaults()
 {
-    this->set_fast_master(false);
-    this->set_kP(0.0);
-    this->set_kI(0.0);
-    this->set_kD(0.0);
-    this->set_kF(0.0);
-    this->set_kP_Slot1(0.0);
-    this->set_kI_Slot1(0.0);
-    this->set_kD_Slot1(0.0);
-    this->set_kF_Slot1(0.0);
-    this->set_active_gain_slot(0);
-    this->set_i_zone(0.0);
-    this->set_max_i_accum(0.0);
-    this->set_allowed_closed_loop_error(0.0);
-    this->set_max_closed_loop_peak_output(0.0);
-    this->set_motion_cruise_velocity(0.0);
-    this->set_motion_acceleration(0.0);
-    this->set_motion_s_curve_strength(0);
+    this->set_kP(0.0, 0);
+    this->set_kI(0.0, 0);
+    this->set_kD(0.0, 0);
+    this->set_kV(0.0, 0);
+    this->set_kS(0.0, 0);
+    this->set_kP(0.0, 1);
+    this->set_kI(0.0, 1);
+    this->set_kD(0.0, 1);
+    this->set_kV(0.0, 1);
+    this->set_kS(0.0, 1);
+    this->set_kP(0.0, 2);
+    this->set_kI(0.0, 2);
+    this->set_kD(0.0, 2);
+    this->set_kV(0.0, 2);
+    this->set_kS(0.0, 2);
+    this->set_motion_magic_cruise_velocity(0.0);
+    this->set_motion_magic_acceleration(0.0);
+    this->set_motion_magic_jerk(0.0);
     this->set_forward_soft_limit(0.0);
     this->set_forward_soft_limit_enable(false);
     this->set_reverse_soft_limit(0.0);
     this->set_reverse_soft_limit_enable(false);
-    this->set_feedback_sensor_coefficient(0.0);
-    this->set_voltage_compensation_saturation(12.0);
-    this->set_voltage_compensation_enabled(true);
     this->set_inverted(false);
-    this->set_sensor_phase_inverted(false);
     this->set_neutral_mode(MotorConfig::NeutralMode::COAST);
-    this->set_open_loop_ramp(0.0);
-    this->set_closed_loop_ramp(0.0);
+    this->set_duty_cycle_open_loop_ramp(0.0);
+    this->set_torque_current_open_loop_ramp(0.0);
+    this->set_voltage_open_loop_ramp(0.0);
+    this->set_duty_cycle_closed_loop_ramp(0.0);
+    this->set_torque_current_closed_loop_ramp(0.0);
+    this->set_voltage_closed_loop_ramp(0.0);
     this->set_supply_current_limit(true, 40.0, 0.0, 0.0);
-    this->set_stator_current_limit(false, 0.0, 0.0, 0.0);
-    this->set_follower(false, 0);
-    this->set_forward_limit_switch(LimitSwitchSource::Deactivated, LimitSwitchNormal::Disabled);
-    this->set_reverse_limit_switch(LimitSwitchSource::Deactivated, LimitSwitchNormal::Disabled);
-    this->set_peak_output_forward(0);
-    this->set_peak_output_reverse(0);
+    this->set_stator_current_limit(false, 0.0);
+    this->set_follower(0);
 }
 
-Motor::Motor(uint8_t id, Motor_Type type)
+Motor::Motor(uint8_t id)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
     if(motor_master == nullptr)
@@ -536,32 +434,29 @@ Motor::Motor(uint8_t id, Motor_Type type)
         motor_master = new MotorMaster();
     }
     this->id = id;
-    motor_master->create_motor_config(id, type);
+    motor_master->create_motor_config(id);
     motor_master->store_motor_pointer(id, this);
 }
 
-void Motor::set(Control_Mode mode, double output, double arbitrary_feedforward)
+void Motor::set(ControlMode mode, double setpoint, double feed_forward, uint8_t gain_slot)
 {
     std::lock_guard<std::recursive_mutex> lock(mValueLock);
     mControlMode = mode;
-    mOutput = output;
-    mArbFF = arbitrary_feedforward;
+    mOutput = setpoint;
+    mArbFF = feed_forward;
 
-    ck_ros_base_msgs_node::Motor_Control motors;
-    ck_ros_base_msgs_node::Motor motor;
-    motor.controller_type = this->config().active_config.motor_config.controller_type;
+    ck_ros2_base_msgs_node::msg::MotorControlArray motors;
+    ck_ros2_base_msgs_node::msg::MotorControl motor;
     motor.id = id;
     motor.control_mode = (uint8_t) mode;
-    motor.output_value = output;
-    motor.arbitrary_feedforward = arbitrary_feedforward;
+    motor.setpoint = setpoint;
+    motor.feed_forward = feed_forward;
     motors.motors.push_back(motor);
-    static ros::Publisher motor_control_pub = node->advertise<ck_ros_base_msgs_node::Motor_Control>("MotorControl", 50);
-    motor_control_pub.publish(motors);
+    static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr motor_control_pub = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>("MotorControl", 50);
+    motor_control_pub->publish(motors);
 }
 
 MotorConfig& Motor::config()
 {
     return *(motor_master->retrieve_configuration(this->id));
 }
-
-#endif
