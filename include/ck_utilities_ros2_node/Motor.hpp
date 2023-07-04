@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "ck_ros2_base_msgs_node/msg/motor_control.hpp"
 #include "ck_ros2_base_msgs_node/msg/motor_configuration.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_status.hpp"
 #include <atomic>
 #include <mutex>
 
@@ -62,6 +63,31 @@ friend class MotorMaster;
 friend class Motor;
 };
 
+class MotorStatus
+{
+private:
+    uint8_t motor_id;
+    ck_ros2_base_msgs_node::msg::MotorStatus status_data;
+public:
+    uint8_t get_id();
+    double get_sensor_position();
+    double get_sensor_velocity();
+    double get_bus_voltage();
+    double get_bus_current();
+    double get_stator_current();
+    bool get_forward_limit_closed();
+    bool get_reverse_limit_closed();
+    uint8_t get_control_mode();
+    double get_commanded_output();
+    double get_raw_output_percent();
+protected:
+    MotorStatus() { };
+
+friend class MotorMaster;
+friend class Motor;
+};
+
+
 class Motor
 {
 public:
@@ -90,6 +116,7 @@ public:
     Motor(uint8_t id);
     void set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward, uint8_t gain_slot = 0);
     MotorConfig& config();
+    MotorStatus& status();
 
 private:
     Motor() = delete;

@@ -5,6 +5,8 @@
 #include "ck_ros2_base_msgs_node/msg/motor_control_array.hpp"
 #include "ck_ros2_base_msgs_node/msg/motor_configuration.hpp"
 #include "ck_ros2_base_msgs_node/msg/motor_configuration_array.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_status.hpp"
+#include "ck_ros2_base_msgs_node/msg/motor_status_array.hpp"
 #include "ck_ros2_base_msgs_node/msg/robot_status.hpp"
 #include "ck_utilities_ros2_node/Motor.hpp"
 
@@ -24,6 +26,20 @@ public:
     static void robot_status_callback(const ck_ros2_base_msgs_node::msg::RobotStatus::SharedPtr msg)
     {
         robot_mode = msg->robot_state;
+    }
+
+    static void motor_status_callback(const ck_ros2_base_msgs_node::msg::MotorStatusArray::SharedPtr msg)
+    {
+        std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+        for (auto m : msg->motors)
+        {
+            if(status_map.find(m.id) == status_map.end())
+            {
+                status_map[m.id] = new MotorStatus();
+            }
+            status_map[m.id]->motor_id = m.id;
+            status_map[m.id]->status_data = m;
+        }
     }
 
     static void store_motor_pointer(uint8_t id, Motor* motor)
@@ -59,6 +75,16 @@ public:
         configuration_map[id]->apply();
     }
 
+    static MotorStatus * retrieve_status(uint8_t id)
+    {
+        std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+        if(status_map.find(id) == status_map.end())
+        {
+            return nullptr;
+        }
+        return status_map[id];
+    }
+
     static MotorConfig * retrieve_configuration(uint8_t id)
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
@@ -87,6 +113,7 @@ public:
         robot_mode = 0;
         robot_data_subscriber = node_handle->create_subscription<ck_ros2_base_msgs_node::msg::RobotStatus>("RobotStatus", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(), MotorMaster::robot_status_callback);
 
+        motor_status_subscriber = node_handle->create_subscription<ck_ros2_base_msgs_node::msg::MotorStatusArray>("MotorStatus", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(), MotorMaster::motor_status_callback);
 
         motor_master_thread = new std::thread(motor_master_loop);
     }
@@ -96,6 +123,13 @@ public:
         try
         {
             std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+            for(std::map<uint8_t, MotorStatus *>::iterator i = status_map.begin();
+                i != status_map.end();
+                i++)
+            {
+                delete (*i).second;
+                (*i).second = nullptr;
+            }
             for(std::map<uint8_t, MotorConfig *>::iterator i = configuration_map.begin();
                 i != configuration_map.end();
                 i++)
@@ -110,6 +144,7 @@ public:
                 delete (*i).second;
                 (*i).second = nullptr;
             }
+            status_map.clear();
             configuration_map.clear();
             motor_map.clear();
 
@@ -128,8 +163,10 @@ private:
     static std::thread * motor_master_thread;
     static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>::SharedPtr config_publisher;
     static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr control_publisher;
+    static rclcpp::Subscription<ck_ros2_base_msgs_node::msg::MotorStatusArray>::SharedPtr motor_status_subscriber;
     static rclcpp::Subscription<ck_ros2_base_msgs_node::msg::RobotStatus>::SharedPtr robot_data_subscriber;
     static std::atomic<int8_t> robot_mode;
+    static std::map<uint8_t, MotorStatus *> status_map;
     static std::map<uint8_t, MotorConfig *> configuration_map;
     static std::map<uint8_t, Motor *> motor_map;
 
@@ -222,12 +259,14 @@ friend class Motor;
 friend class MotorConfig;
 };
 
+std::map<uint8_t, MotorStatus *> MotorMaster::status_map;
 std::map<uint8_t, MotorConfig *> MotorMaster::configuration_map;
 std::map<uint8_t, Motor *> MotorMaster::motor_map;
 std::thread * MotorMaster::motor_master_thread;
 rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>::SharedPtr MotorMaster::config_publisher;
 rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr MotorMaster::control_publisher;
 rclcpp::Subscription<ck_ros2_base_msgs_node::msg::RobotStatus>::SharedPtr MotorMaster::robot_data_subscriber;
+rclcpp::Subscription<ck_ros2_base_msgs_node::msg::MotorStatusArray>::SharedPtr MotorMaster::motor_status_subscriber;
 std::atomic<int8_t> MotorMaster::robot_mode;
 
 static MotorMaster * motor_master = nullptr;
@@ -463,4 +502,75 @@ void Motor::set(ControlMode mode, double setpoint, FeedForwardType feed_forward_
 MotorConfig& Motor::config()
 {
     return *(motor_master->retrieve_configuration(this->id));
+}
+
+MotorStatus& Motor::status()
+{
+    return *(motor_master->retrieve_status(this->id));
+}
+
+uint8_t MotorStatus::get_id()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.id;
+}
+
+double MotorStatus::get_sensor_position()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.sensor_position;
+}
+
+double MotorStatus::get_sensor_velocity()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.sensor_velocity;
+}
+
+double MotorStatus::get_bus_voltage()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.bus_voltage;
+}
+
+double MotorStatus::get_bus_current()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.bus_current;
+}
+
+double MotorStatus::get_stator_current()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.stator_current;
+}
+
+bool MotorStatus::get_forward_limit_closed()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.forward_limit_closed;
+}
+
+bool MotorStatus::get_reverse_limit_closed()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.reverse_limit_closed;
+}
+
+uint8_t MotorStatus::get_control_mode()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.control_mode;
+}
+
+double MotorStatus::get_commanded_output()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.commanded_output;
+}
+
+double MotorStatus::get_raw_output_percent()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    return status_data.raw_output_percent;
 }
