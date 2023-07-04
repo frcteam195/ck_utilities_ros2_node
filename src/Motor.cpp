@@ -76,6 +76,33 @@ public:
         configuration_map[id]->apply();
     }
 
+        static void create_motor_config_from_params(uint8_t id, MotorConfigurationParameters params)
+    {
+        std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+        if (configuration_map.find(id) != configuration_map.end())
+        {
+            return;
+        }
+        configuration_map[id] = new MotorConfig();
+        configuration_map[id]->motor_id = id;
+        configuration_map[id]->active_config.motor_id = id;
+        configuration_map[id]->pending_config.motor_id = id;
+        configuration_map[id]->active_config.motor_config.id = id;
+        configuration_map[id]->pending_config.motor_config.id = id;
+        configuration_map[id]->pending_config.motor_config.k_p = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_i = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_d = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_v = std::vector<double>{0,0,0};
+        configuration_map[id]->pending_config.motor_config.k_s = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_p = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_i = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_d = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_v = std::vector<double>{0,0,0};
+        configuration_map[id]->active_config.motor_config.k_s = std::vector<double>{0,0,0};
+        configuration_map[id]->load_parameters(params);
+        configuration_map[id]->apply();
+    }
+
     static MotorStatus * retrieve_status(uint8_t id)
     {
         std::lock_guard<std::recursive_mutex> lock(motor_mutex);
@@ -468,6 +495,37 @@ void MotorConfig::set_defaults()
     this->set_stator_current_limit(false, 0.0);
 }
 
+void MotorConfig::load_parameters(MotorConfigurationParameters params)
+{
+    this->pending_config.motor_config.master_id = params.master_id;
+    this->pending_config.motor_config.k_p = params.k_p;
+    this->pending_config.motor_config.k_i = params.k_i;
+    this->pending_config.motor_config.k_d = params.k_d;
+    this->pending_config.motor_config.k_v = params.k_v;
+    this->pending_config.motor_config.k_s = params.k_s;
+    this->pending_config.motor_config.motion_magic_cruise_velocity = params.motion_magic_cruise_velocity;
+    this->pending_config.motor_config.motion_magic_acceleration = params.motion_magic_acceleration;
+    this->pending_config.motor_config.motion_magic_jerk = params.motion_magic_jerk;
+    this->pending_config.motor_config.forward_soft_limit_threshold = params.forward_soft_limit_threshold;
+    this->pending_config.motor_config.enable_forward_soft_limit = params.enable_forward_soft_limit;
+    this->pending_config.motor_config.reverse_soft_limit_threshold = params.reverse_soft_limit_threshold;
+    this->pending_config.motor_config.enable_reverse_soft_limit = params.enable_reverse_soft_limit;
+    this->pending_config.motor_config.invert = params.invert;
+    this->pending_config.motor_config.brake_neutral = params.brake_neutral;
+    this->pending_config.motor_config.duty_cycle_closed_loop_ramp_period = params.duty_cycle_closed_loop_ramp_period;
+    this->pending_config.motor_config.torque_current_closed_loop_ramp_period = params.torque_current_closed_loop_ramp_period;
+    this->pending_config.motor_config.voltage_closed_loop_ramp_period = params.voltage_closed_loop_ramp_period;
+    this->pending_config.motor_config.duty_cycle_open_loop_ramp_period = params.duty_cycle_open_loop_ramp_period;
+    this->pending_config.motor_config.torque_current_open_loop_ramp_period = params.torque_current_open_loop_ramp_period;
+    this->pending_config.motor_config.voltage_open_loop_ramp_period = params.voltage_open_loop_ramp_period;
+    this->pending_config.motor_config.enable_supply_current_limit = params.enable_supply_current_limit;
+    this->pending_config.motor_config.supply_current_limit = params.supply_current_limit;
+    this->pending_config.motor_config.supply_current_threshold = params.supply_current_threshold;
+    this->pending_config.motor_config.supply_time_threshold = params.supply_time_threshold;
+    this->pending_config.motor_config.enable_stator_current_limit = params.enable_stator_current_limit;
+    this->pending_config.motor_config.stator_current_limit = params.stator_current_limit;
+}
+
 Motor::Motor(uint8_t id)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
@@ -478,6 +536,59 @@ Motor::Motor(uint8_t id)
     this->id = id;
     motor_master->create_motor_config(id);
     motor_master->store_motor_pointer(id, this);
+}
+
+Motor::Motor(std::string id)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    if(motor_master == nullptr)
+    {
+        motor_master = new MotorMaster();
+    }
+
+    MotorConfigurationParameters params;
+
+    try 
+    {
+       params.motor_id = node_handle->get_parameter(id+"_motor_id").as_int();
+       params.master_id = node_handle->get_parameter(id+"_master_id").as_int();
+       params.invert = node_handle->get_parameter(id+"_invert").as_bool();
+       params.brake_neutral = node_handle->get_parameter(id+"_brake_neutral").as_bool();
+       params.k_p = node_handle->get_parameter(id+"_k_p").as_double_array();
+       params.k_i = node_handle->get_parameter(id+"_k_i").as_double_array();
+       params.k_d = node_handle->get_parameter(id+"_k_d").as_double_array();
+       params.k_v = node_handle->get_parameter(id+"_k_v").as_double_array();
+       params.k_s = node_handle->get_parameter(id+"_k_s").as_double_array();
+       params.enable_stator_current_limit = node_handle->get_parameter(id+"_enable_stator_current_limit").as_bool();
+       params.stator_current_limit = node_handle->get_parameter(id+"_stator_current_limit").as_double();
+       params.enable_supply_current_limit = node_handle->get_parameter(id+"_enable_supply_current_limit").as_bool();
+       params.supply_current_limit = node_handle->get_parameter(id+"_supply_current_limit").as_double();
+       params.supply_current_threshold = node_handle->get_parameter(id+"_supply_current_threshold").as_double();
+       params.supply_time_threshold = node_handle->get_parameter(id+"_supply_time_threshold").as_double();
+       params.duty_cycle_closed_loop_ramp_period = node_handle->get_parameter(id+"_duty_cycle_closed_loop_ramp_period").as_double();
+       params.torque_current_closed_loop_ramp_period = node_handle->get_parameter(id+"_torque_current_closed_loop_ramp_period").as_double();
+       params.voltage_closed_loop_ramp_period = node_handle->get_parameter(id+"_voltage_closed_loop_ramp_period").as_double();
+       params.duty_cycle_open_loop_ramp_period = node_handle->get_parameter(id+"_duty_cycle_open_loop_ramp_period").as_double();
+       params.torque_current_open_loop_ramp_period = node_handle->get_parameter(id+"_torque_current_open_loop_ramp_period").as_double();
+       params.voltage_open_loop_ramp_period = node_handle->get_parameter(id+"_voltage_open_loop_ramp_period").as_double();
+       params.enable_forward_soft_limit = node_handle->get_parameter(id+"_enable_forward_soft_limit").as_bool();
+       params.forward_soft_limit_threshold = node_handle->get_parameter(id+"_forward_soft_limit_threshold").as_double();
+       params.enable_reverse_soft_limit = node_handle->get_parameter(id+"_enable_reverse_soft_limit").as_bool();
+       params.reverse_soft_limit_threshold = node_handle->get_parameter(id+"_reverse_soft_limit_threshold").as_double();
+       params.motion_magic_cruise_velocity = node_handle->get_parameter(id+"_motion_magic_cruise_velocity").as_double();
+       params.motion_magic_acceleration = node_handle->get_parameter(id+"_motion_magic_acceleration").as_double();
+       params.motion_magic_jerk = node_handle->get_parameter(id+"_motion_magic_jerk").as_double();
+    }
+    catch (std::exception& e)
+    {
+        std::cout << "Error parsing motor parameters!" << std::endl;
+        std::cout << e.what() << std::endl;
+        throw e;
+    }
+
+    this->id = params.motor_id;
+    motor_master->create_motor_config(params.motor_id);
+    motor_master->store_motor_pointer(params.motor_id, this);
 }
 
 void Motor::set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward, uint8_t gain_slot)
