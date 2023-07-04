@@ -31,6 +31,7 @@ public:
     };
 
     void apply();
+    void follow(uint8_t master_id);
     void set_kP(double value, uint8_t slot);
     void set_kI(double value, uint8_t slot);
     void set_kD(double value, uint8_t slot);
@@ -53,7 +54,6 @@ public:
     void set_voltage_closed_loop_ramp(double value);
     void set_supply_current_limit(bool enabled, double current_limit, double trigger_current, double trigger_time);
     void set_stator_current_limit(bool enabled, double current_limit);
-    void set_follower(uint8_t master_id);
     void set_defaults();
 
 protected:
@@ -80,6 +80,8 @@ public:
     uint8_t get_control_mode();
     double get_commanded_output();
     double get_raw_output_percent();
+    double get_setpoint();
+    bool is_at_setpoint(double setpoint_delta_threshold);
 protected:
     MotorStatus() { };
 
@@ -114,7 +116,7 @@ public:
     };
 
     Motor(uint8_t id);
-    void set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward, uint8_t gain_slot = 0);
+    void set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward = 0, uint8_t gain_slot = 0);
     MotorConfig& config();
     MotorStatus& status();
 
@@ -129,5 +131,6 @@ private:
     FeedForwardType mFFType {FeedForwardType::NONE};
     uint8_t mGainSlot;
 
+friend class MotorStatus;
 friend class MotorMaster;
 };

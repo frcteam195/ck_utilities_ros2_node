@@ -207,5 +207,11 @@ namespace ck
         {
             return deadband + (value) * (1.0 - deadband);
         }
+
+        template <typename T>
+        inline bool within(T value1, T value2, T threshold)
+        {
+            return std::abs(value1 - value2) < std::abs(threshold);
+        }
     } // namespace math
 } // namespace ck

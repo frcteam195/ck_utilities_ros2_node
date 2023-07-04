@@ -9,6 +9,7 @@
 #include "ck_ros2_base_msgs_node/msg/motor_status_array.hpp"
 #include "ck_ros2_base_msgs_node/msg/robot_status.hpp"
 #include "ck_utilities_ros2_node/Motor.hpp"
+#include "ck_utilities_ros2_node/CKMath.hpp"
 
 #include "rclcpp/rclcpp.hpp"
 #include <mutex>
@@ -424,7 +425,7 @@ void MotorConfig::set_stator_current_limit(bool enabled, double current_limit)
     this->pending_config.motor_config.stator_current_limit = current_limit;
 }
 
-void MotorConfig::set_follower(uint8_t master_id)
+void MotorConfig::follow(uint8_t master_id)
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
     this->pending_config.motor_config.master_id = master_id;
@@ -432,6 +433,7 @@ void MotorConfig::set_follower(uint8_t master_id)
 
 void MotorConfig::set_defaults()
 {
+    this->follow(0);
     this->set_kP(0.0, 0);
     this->set_kI(0.0, 0);
     this->set_kD(0.0, 0);
@@ -464,7 +466,6 @@ void MotorConfig::set_defaults()
     this->set_voltage_closed_loop_ramp(0.0);
     this->set_supply_current_limit(true, 40.0, 0.0, 0.0);
     this->set_stator_current_limit(false, 0.0);
-    this->set_follower(0);
 }
 
 Motor::Motor(uint8_t id)
@@ -573,4 +574,40 @@ double MotorStatus::get_raw_output_percent()
 {
     std::lock_guard<std::recursive_mutex> lock(motor_mutex);
     return status_data.raw_output_percent;
+}
+
+double MotorStatus::get_setpoint()
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    Motor* motor = MotorMaster::retrieve_motor(motor_id);
+    return motor->mOutput;
+}
+
+bool MotorStatus::is_at_setpoint(double setpoint_delta_threshold)
+{
+    std::lock_guard<std::recursive_mutex> lock(motor_mutex);
+    Motor* motor = MotorMaster::retrieve_motor(motor_id);
+
+    double setpoint = motor->mOutput;
+
+    switch (motor->mControlMode)
+    {
+        case Motor::ControlMode::MOTION_MAGIC:
+        case Motor::ControlMode::POSITION:
+        {
+            return ck::math::within(setpoint, status_data.sensor_position, setpoint_delta_threshold);
+        }
+        case Motor::ControlMode::VELOCITY:
+        {
+            return ck::math::within(setpoint, status_data.sensor_velocity, setpoint_delta_threshold);
+        }
+        case Motor::ControlMode::TORQUE_CURRENT:
+        {
+            return ck::math::within(setpoint, status_data.bus_current, setpoint_delta_threshold);
+        }
+        default:
+        {
+            return true;
+        }
+    }
 }
