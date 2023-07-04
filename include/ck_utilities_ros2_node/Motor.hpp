@@ -88,7 +88,7 @@ public:
     };
 
     Motor(uint8_t id);
-    void set(ControlMode mode, double setpoint, double feed_forward = 0, uint8_t gain_slot = 0);
+    void set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward, uint8_t gain_slot = 0);
     MotorConfig& config();
 
 private:

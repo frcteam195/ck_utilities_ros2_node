@@ -1,4 +1,6 @@
 #include <cstdint>
+#include <cstdio>
+#include <iostream>
 #include "ck_ros2_base_msgs_node/msg/motor_control.hpp"
 #include "ck_ros2_base_msgs_node/msg/motor_control_array.hpp"
 #include "ck_ros2_base_msgs_node/msg/motor_configuration.hpp"
@@ -19,9 +21,9 @@ class MotorMaster
 {
 public:
 
-    static void robot_status_callback(const ck_ros2_base_msgs_node::msg::RobotStatus& msg)
+    static void robot_status_callback(const ck_ros2_base_msgs_node::msg::RobotStatus::SharedPtr msg)
     {
-        robot_mode = msg.robot_state;
+        robot_mode = msg->robot_state;
     }
 
     static void store_motor_pointer(uint8_t id, Motor* motor)
@@ -83,7 +85,7 @@ public:
         control_publisher = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>("/MotorControl", 50);
         config_publisher = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorConfigurationArray>("/MotorConfiguration", 50);
         robot_mode = 0;
-        robot_data_subscriber = node_handle->create_subscription<ck_ros2_base_msgs_node::msg::RobotStatus>("RobotStatus", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(), std::bind(&MotorMaster::robot_status_callback, this, std::placeholders::_1));
+        robot_data_subscriber = node_handle->create_subscription<ck_ros2_base_msgs_node::msg::RobotStatus>("RobotStatus", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort().durability_volatile(), MotorMaster::robot_status_callback);
 
 
         motor_master_thread = new std::thread(motor_master_loop);
@@ -438,7 +440,7 @@ Motor::Motor(uint8_t id)
     motor_master->store_motor_pointer(id, this);
 }
 
-void Motor::set(ControlMode mode, double setpoint, double feed_forward, uint8_t gain_slot)
+void Motor::set(ControlMode mode, double setpoint, FeedForwardType feed_forward_type, double feed_forward, uint8_t gain_slot)
 {
     std::lock_guard<std::recursive_mutex> lock(mValueLock);
     mControlMode = mode;
@@ -451,6 +453,8 @@ void Motor::set(ControlMode mode, double setpoint, double feed_forward, uint8_t 
     motor.control_mode = (uint8_t) mode;
     motor.setpoint = setpoint;
     motor.feed_forward = feed_forward;
+    motor.feed_forward_type = (uint8_t) feed_forward_type;
+    motor.gain_slot = gain_slot;
     motors.motors.push_back(motor);
     static rclcpp::Publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>::SharedPtr motor_control_pub = node_handle->create_publisher<ck_ros2_base_msgs_node::msg::MotorControlArray>("MotorControl", 50);
     motor_control_pub->publish(motors);
