@@ -177,9 +177,9 @@ geometry_msgs::msg::Twist geometry::to_msg(geometry::Twist t)
     return result;
 }
 
-boost::array<double, 36UL> geometry::to_msg(geometry::Covariance &c)
+std::array<double, 36UL> geometry::to_msg(geometry::Covariance &c)
 {
-    boost::array<double, 36UL> output;
+    std::array<double, 36UL> output;
     for (int i = 0; i < 6; i++)
     {
         for (int j = 0; j < 6; j++)
